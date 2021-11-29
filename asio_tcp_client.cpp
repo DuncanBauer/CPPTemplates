@@ -26,6 +26,7 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 		// Parameterized constructor
 		TCPClient(boost::asio::io_context& io_context, const std::string& server, size_t port) : resolver(io_context), socket(io_context)
         {
+			// Initialize and connect the socket
 			tcp::endpoint endpoint(boost::asio::ip::address::from_string(server), port);
 			try
 			{
@@ -56,18 +57,27 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 			buff.push_back('l');
 			buff.push_back('o');
 			buff.push_back('\0');
+			buff.push_back('H');
+			buff.push_back('e');
+			buff.push_back('l');
+			buff.push_back('l');
+			buff.push_back('o');
 
 			this->writeBufferQueue.push(std::string(buff.begin(), buff.end()));
 			this->write();
 			this->read();
 		}
+
 		void shutdown()
 		{
+			// Shutdown read/write and the socket itself
+			this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
 			this->socket.close();
 		}
+
         void read()
         {
-			std::cout << "Read" << '\n';
+			// Read into readBuffer until we reach a null terminator '\0'
 			boost::asio::async_read_until(this->socket,
 										  this->readBuffer,
 										  '\0',
@@ -76,9 +86,10 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 										  boost::asio::placeholders::error,
 										  boost::asio::placeholders::bytes_transferred));
 		}
+
 		void write()
 		{
-			std::cout << "Write" << '\n';
+			// Async write
 			boost::asio::async_write(this->socket,
 									 boost::asio::buffer(this->writeBufferQueue.front()),
 								     boost::bind(&TCPClient::handleWrite,
@@ -91,54 +102,58 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
     private:
 		void handleRead(const boost::system::error_code& _error, size_t _bytes_transferred)
         {
-			std::cout << "Handle read" << '\n';
-			// if (!(boost::asio::error::eof == _error && boost::asio::error::connection_reset == _error))
+			// If theres an async error, close the connection
 			if (!_error)
 			{
+				// Construct a std::string from a boost::asio::streambuf
+				// We might read in extra data past the delimiter (According to Boost docs) so we don't read the whole buffer.
+				// Only read the number of bytes before the \0 
 				boost::asio::streambuf::const_buffers_type bufs = this->readBuffer.data();
-				std::string str(boost::asio::buffers_begin(bufs), boost::asio::buffers_end(bufs));
+				std::string str(boost::asio::buffers_begin(bufs), boost::asio::buffers_begin(bufs) + _bytes_transferred);
 
+				// Process data
 				std::cout << "Num bytes read: " << _bytes_transferred << '\n';
 				std::cout << "Bytes received: " << str << '\n';
+
+				// Clear the read buffer
 				this->readBuffer.consume(_bytes_transferred);
 				this->read();
 			}
 			else
 			{
 				std::cout << _error.message() << '\n';
-				this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
-				// this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, _error);
 			}
         }
+
         void handleWrite(const boost::system::error_code& _error, size_t _bytes_transferred)
         {
-			std::cout << "Handle write" << '\n';
-			// if (!(boost::asio::error::eof == _error && boost::asio::error::connection_reset == _error))
+			// If theres an async error, close the connection
 			if (!_error)
 			{
+				// Pop the written packet from the write buffer
 				std::string str(this->writeBufferQueue.front());
 				this->writeBufferQueue.pop();
 				
+				// Keep this for testing/examples
 				std::cout << "Num bytes written: " << _bytes_transferred << '\n';
 				std::cout << "Bytes written: " << str << '\n';
 			}
 			else
 			{
 				std::cout << _error.message() << '\n';
-				this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
-				// this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, _error);
 			}
         }
 
-        tcp::resolver resolver;
-        tcp::socket socket;
 		bool mSocketActive = false;
+        tcp::socket socket;
+        tcp::resolver resolver;
 		boost::asio::streambuf readBuffer;
 		std::queue<std::string> writeBufferQueue;
 };
 
 int main(int argc, char* argv[])
 {
+	// Create an input loop inside a lambda function
 	auto inputLoop = []() {
         bool q = false;
         char cmd;
@@ -161,16 +176,21 @@ int main(int argc, char* argv[])
 			std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
     };
+	// Thread our input loop
     std::jthread t1(inputLoop);
 
+	// Initialize the ASIO context and TCPClient
 	boost::asio::io_context io_context;
 	std::shared_ptr<TCPClient> client = std::make_shared<TCPClient>(io_context, "127.0.0.1", 1111);
-	if(client->isSocketActive()) 
+	
+	// If the client fails to connect to the server, don't attempt to start communicating
+	if(client->isSocketActive())
 	{ 
 		client->start(); 
 	}
+
+	// If the client can't connect to the server, this won't block
 	io_context.run();
 	
-	std::cout << "Shutting down client\n";
 	return 0;
 }

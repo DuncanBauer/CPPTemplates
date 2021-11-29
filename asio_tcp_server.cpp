@@ -51,12 +51,17 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 			this->write();
 			this->read();
 		}
+
 		void shutdown()
 		{
+			// Shutdown read/write and the socket itself
+			this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
 			this->socket.close();
 		}
+
 		void read()
 		{
+			// Read into readBuffer until we reach a null terminator '\0'
 			boost::asio::async_read_until(this->socket,
 										  this->readBuffer,
 										  '\0',
@@ -65,8 +70,10 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 										  boost::asio::placeholders::error,
 										  boost::asio::placeholders::bytes_transferred));
 		}
+
 		void write()
 		{
+			// Async write
 			boost::asio::async_write(this->socket,
 									 boost::asio::buffer(this->writeBufferQueue.front()),
 									 boost::bind(&TCPConnection::handleWrite,
@@ -74,16 +81,23 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 									 boost::asio::placeholders::error,
 									 boost::asio::placeholders::bytes_transferred));
 		}
+
 		void handleRead(const boost::system::error_code& _error, size_t _bytes_transferred)
 		{
-			// if (!(boost::asio::error::eof == _error && boost::asio::error::connection_reset == _error))
+			// If theres an async error, close the connection
 			if (!_error)
 			{
+				// Construct a std::string from a boost::asio::streambuf
+				// We might read in extra data past the delimiter (According to Boost docs) so we don't read the whole buffer.
+				// Only read the number of bytes before the \0 
 				boost::asio::streambuf::const_buffers_type bufs = this->readBuffer.data();
-				std::string str(boost::asio::buffers_begin(bufs), boost::asio::buffers_end(bufs));
+				std::string str(boost::asio::buffers_begin(bufs), boost::asio::buffers_begin(bufs) + _bytes_transferred);
 
+				// Process data
 				std::cout << "Num bytes read: " << _bytes_transferred << '\n';
 				std::cout << "Bytes received: " << str << '\n';
+
+				// Clear the read buffer
 				this->readBuffer.consume(_bytes_transferred);
 				this->read();
 			}
@@ -92,14 +106,17 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 				std::cout << _error.message() << '\n';
 			}
 		}
+
 		void handleWrite(const boost::system::error_code& _error, size_t _bytes_transferred)
 		{
-			// if (!(boost::asio::error::eof == _error && boost::asio::error::connection_reset == _error))
+			// If theres an async error, close the connection
 			if (!_error)
 			{
+				// Pop the written packet from the write buffer
 				std::string str(this->writeBufferQueue.front());
 				this->writeBufferQueue.pop();
 
+				// Keep this for testing/examples
 				std::cout << "Num bytes written: " << _bytes_transferred << '\n';
 				std::cout << "Bytes written: " << str << '\n';
 			}
@@ -153,6 +170,7 @@ class TCPServer : public std::enable_shared_from_this<TCPServer>
 		 ***************/
 		void startAccept()
 		{
+			// Async accept connection
 			std::shared_ptr<TCPConnection> newConnection = TCPConnection::create(this->ioContext);
 			this->acceptor.async_accept(newConnection->getSocket(),
 										boost::bind(&TCPServer::handleAccept,
@@ -160,12 +178,17 @@ class TCPServer : public std::enable_shared_from_this<TCPServer>
 										newConnection,
 										boost::asio::placeholders::error));
 		}
+
 		void handleAccept(std::shared_ptr<TCPConnection> _newConnection, const boost::system::error_code& _error)
 		{
+			// If theres an async error, close the connection
 			if (!_error)
 			{
+				// Push new connection onto our list of connections and start communications
 				this->connections->push_back(_newConnection);
 				_newConnection->start();
+
+				// Async accept new client
 				this->startAccept();
 			}
 			else
