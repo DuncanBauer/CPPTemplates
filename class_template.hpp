@@ -16,7 +16,7 @@ class TemplateClass
         TemplateClass() = default;
 
         // Parameterized constructors
-		TemplateClass(int _exampleInt) : exampleInt(_exampleInt) {}
+		TemplateClass(){}
         
         // Copy Constructor
         // Don't deep copy textures / models
