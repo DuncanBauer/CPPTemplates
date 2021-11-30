@@ -14,8 +14,8 @@
 // Namespaces
 using boost::asio::ip::tcp;
 
-// Typedefs
-typedef std::vector<unsigned char> ByteBuffer;
+// Aliases
+using ByteBuffer = std::vector<unsigned char>;
 
 class TCPClient : public std::enable_shared_from_this<TCPClient>
 {

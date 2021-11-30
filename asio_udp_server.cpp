@@ -12,8 +12,8 @@
 // Namespaces
 using boost::asio::ip::udp;
 
-// Typedefs
-typedef std::vector<unsigned char> ByteBuffer;
+// Aliases
+using ByteBuffer = std::vector<unsigned char>;
 
 // Consts
 const int RECV_BUFFER_SIZE = 128;
