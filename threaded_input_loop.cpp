@@ -21,7 +21,7 @@ void threadFunc(int n = 10)
 
 void pushToStack(int i)
 {
-    std::lock_guard<std::mutex> guard(m);
+    std::lock_guard<std::mutex> lock(m);
     q.push(i);
 }
 

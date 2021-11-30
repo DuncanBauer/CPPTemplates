@@ -15,6 +15,9 @@ using boost::asio::ip::udp;
 // Typedefs
 typedef std::vector<unsigned char> ByteBuffer;
 
+// Consts
+const int RECV_BUFFER_SIZE = 128;
+
 class UDPServer : public std::enable_shared_from_this<UDPServer>
 {
 	public:
@@ -25,7 +28,10 @@ class UDPServer : public std::enable_shared_from_this<UDPServer>
 		UDPServer() = delete;
 
 		// Parameterized constructors
-		UDPServer(boost::asio::io_context& _ioContext, size_t _port) : ioContext(_ioContext), socket(_ioContext, udp::endpoint(udp::v4(), _port)), mSocketActive(true) {}
+		UDPServer(boost::asio::io_context& _ioContext, size_t _port) : ioContext(_ioContext), socket(_ioContext, udp::endpoint(udp::v4(), _port)), mSocketActive(true)
+		{
+			this->receiveBuffer.assign(0);
+		}
 			
 		// Destructor
 		~UDPServer() {}
@@ -70,33 +76,43 @@ class UDPServer : public std::enable_shared_from_this<UDPServer>
 		void send()
 		{
 			// Async send
-			this->sendBufferQueue.push(std::string("Hello"));
-			std::cout << "Writing: " << this->sendBufferQueue.front() << '\n';
+			if(this->sendBufferQueue.size() > 0)
+			{
+				this->socket.async_send_to(boost::asio::buffer(this->sendBufferQueue.front(), this->sendBufferQueue.front().size()),
+										this->remoteEndpoint,
+										boost::bind(&UDPServer::handleSend,
+													shared_from_this(),
+													boost::asio::placeholders::error,
+													boost::asio::placeholders::bytes_transferred));
+			}
+		}
 
-			this->socket.async_send_to(boost::asio::buffer(this->sendBufferQueue.front(), this->sendBufferQueue.front().size()),
-									   this->remoteEndpoint,
-									   boost::bind(&UDPServer::handleSend,
-												   shared_from_this(),
-												   boost::asio::placeholders::error,
-												   boost::asio::placeholders::bytes_transferred));
+		void pushOntoSendQueue(std::string _str)
+		{
+			std::lock_guard<std::mutex> lock(this->m);
+			this->sendBufferQueue.push(_str + '\0');
 		}
 
 		/*****************
 		 * Getters & Setters
 		 ****************/
 		udp::socket& getSocket() { return this->socket; }
+		bool isSocketActive() { return this->mSocketActive; }
 
 	private:
 		void handleReceive(const boost::system::error_code& _error, size_t _bytes_transferred)
 		{
 			if (!_error)
 			{
-				std::string str(this->receiveBuffer.begin(), this->receiveBuffer.end());
+				std::string str(this->receiveBuffer.begin(), this->receiveBuffer.begin() + _bytes_transferred);
 
-				std::cout << "Num bytes received: " << _bytes_transferred << '\n';
-				std::cout << "Read: " << str << '\n';
+				std::cout << "Received: ";
+				for(int i = 0; i < str.size(); ++i)
+				{
+					std::cout << std::hex << (unsigned int)str[i] << ' ';
+				}
+				std::cout << "\n\n";
 
-				// Clear the read buffer
 				this->receive();
     		}
 			else
@@ -109,9 +125,21 @@ class UDPServer : public std::enable_shared_from_this<UDPServer>
 		{
 			if (!_error)
 			{
-				std::cout << "Num bytes sent: " << _bytes_transferred << '\n';
-				std::cout << "Writing: " << this->sendBufferQueue.front() << '\n';
+				std::string str = this->sendBufferQueue.front();
 				this->sendBufferQueue.pop();
+
+				std::cout << "Sending: ";
+				for(int i = 0; i < str.size(); ++i)
+				{
+					std::cout << std::hex << (unsigned int)str[i] << ' ';
+				}
+				std::cout << "\n\n";
+
+				
+				if(this->sendBufferQueue.size() > 0)
+				{
+					this->send();
+				}
     		}
 			else
 			{
@@ -119,11 +147,12 @@ class UDPServer : public std::enable_shared_from_this<UDPServer>
 			}
 		}
 
+		std::mutex m;
 		bool mSocketActive = false;
 		boost::asio::io_context& ioContext;
 		udp::socket socket;
 		udp::endpoint remoteEndpoint;
-		boost::array<char, 128> receiveBuffer;
+		boost::array<char, RECV_BUFFER_SIZE> receiveBuffer;
 		std::queue<std::string> sendBufferQueue;
 };
 

@@ -1,6 +1,9 @@
 // C++
+#include <ios>
 #include <iostream>
+#include <limits>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <vector>
 
@@ -50,21 +53,6 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 		 ****************/
 		void start()
 		{
-			ByteBuffer buff;
-			buff.push_back('H');
-			buff.push_back('e');
-			buff.push_back('l');
-			buff.push_back('l');
-			buff.push_back('o');
-			buff.push_back('\0');
-			buff.push_back('H');
-			buff.push_back('e');
-			buff.push_back('l');
-			buff.push_back('l');
-			buff.push_back('o');
-
-			this->writeBufferQueue.push(std::string(buff.begin(), buff.end()));
-			this->write();
 			this->read();
 		}
 
@@ -101,13 +89,26 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 		void write()
 		{
 			// Async write
-			boost::asio::async_write(this->socket,
-									 boost::asio::buffer(this->writeBufferQueue.front()),
-								     boost::bind(&TCPClient::handleWrite,
-												 shared_from_this(),
-												 boost::asio::placeholders::error,
-												 boost::asio::placeholders::bytes_transferred));
+			if(this->writeBufferQueue.size() > 0)
+			{
+				boost::asio::async_write(this->socket,
+										boost::asio::buffer(this->writeBufferQueue.front()),
+										boost::bind(&TCPClient::handleWrite,
+													shared_from_this(),
+													boost::asio::placeholders::error,
+													boost::asio::placeholders::bytes_transferred));
+			}
 		}
+
+		void pushOntoWriteQueue(std::string _str)
+		{
+			std::lock_guard<std::mutex> lock(this->m);
+			this->writeBufferQueue.push(_str + '\0');
+		}
+
+		/*****************
+		 * Getters & Setters
+		 ****************/
 		bool isSocketActive() { return this->mSocketActive; }
 
     private:
@@ -123,8 +124,12 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 				std::string str(boost::asio::buffers_begin(bufs), boost::asio::buffers_begin(bufs) + _bytes_transferred);
 
 				// Process data
-				std::cout << "Num bytes read: " << _bytes_transferred << '\n';
-				std::cout << "Bytes received: " << str << '\n';
+				std::cout << "Bytes received: ";
+				for(int i = 0; i < _bytes_transferred; ++i)
+				{
+					std::cout << std::hex << (unsigned int)str[i] << ' ';
+				}
+				std::cout << "\n\n";
 
 				// Clear the read buffer
 				this->readBuffer.consume(_bytes_transferred);
@@ -133,7 +138,6 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 			else
 			{
 				std::cout << "Error: " << _error.message() << '\n';
-				this->shutdown();
 			}
         }
 
@@ -147,16 +151,25 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 				this->writeBufferQueue.pop();
 				
 				// Keep this for testing/examples
-				std::cout << "Num bytes written: " << _bytes_transferred << '\n';
-				std::cout << "Bytes written: " << str << '\n';
+				std::cout << "Bytes written: ";
+				for(int i = 0; i < _bytes_transferred; ++i)
+				{
+					std::cout << std::hex << (unsigned int)str[i] << ' ';
+				}
+				std::cout << "\n\n";
+
+				if(this->writeBufferQueue.size() > 0)
+				{
+					this->write();
+				}
 			}
 			else
 			{
 				std::cout << "Error: " << _error.message() << '\n';
-				this->shutdown();
 			}
         }
 
+		std::mutex m;
 		bool mSocketActive = false;
         tcp::socket socket;
         tcp::resolver resolver;
@@ -164,9 +177,14 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 		std::queue<std::string> writeBufferQueue;
 };
 
+/****************************
+* Global variables and functions used in main
+****************************/
 boost::asio::io_context io_context;
 
 void stopEverything(std::shared_ptr<TCPClient> _client);
+void pushPacket(std::shared_ptr<TCPClient> _client);
+
 void stopEverything(std::shared_ptr<TCPClient> _client)
 {
 	if(_client.use_count() == 1)
@@ -192,18 +210,31 @@ int main(int argc, char* argv[])
             std::cout << "Quit: (Q or q)" << '\n';
             std::cout << "Enter command: " << '\n' << "> ";
             std::cin >> cmd;
+			std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
             switch(cmd)
             {
-                case 'Q':
-                    [[fallthrough]];
+                case 'Q': [[fallthrough]];
                 case 'q':
                     q = true;
 					stopEverything(client);
                     break;
-                default:
+				case 'S': [[fallthrough]];
+				case 's':
+					client->write();
+					break;
+				case 'W': [[fallthrough]];
+				case 'w':
+				// Must brace this block for the initialization of str
+				{
+					std::string str;
+					std::cout << "Enter message to send: ";
+					std::getline(std::cin, str);
+					client->pushOntoWriteQueue(str);
+					break;
+				}
+				default:
                     break;
             }
-			std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
     };
 	// Thread our input loop

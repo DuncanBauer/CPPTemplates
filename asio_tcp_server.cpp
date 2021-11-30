@@ -85,12 +85,15 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 		void write()
 		{
 			// Async write
-			boost::asio::async_write(this->socket,
-									 boost::asio::buffer(this->writeBufferQueue.front()),
-									 boost::bind(&TCPConnection::handleWrite,
-												 shared_from_this(),
-												 boost::asio::placeholders::error,
-												 boost::asio::placeholders::bytes_transferred));
+			if(this->writeBufferQueue.size() > 0)
+			{
+				boost::asio::async_write(this->socket,
+										boost::asio::buffer(this->writeBufferQueue.front()),
+										boost::bind(&TCPConnection::handleWrite,
+													shared_from_this(),
+													boost::asio::placeholders::error,
+													boost::asio::placeholders::bytes_transferred));
+			}
 		}
 
 		/*****************
@@ -116,12 +119,20 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 				std::string str(boost::asio::buffers_begin(bufs), boost::asio::buffers_begin(bufs) + _bytes_transferred);
 
 				// Process data
-				std::cout << "Num bytes read: " << _bytes_transferred << '\n';
-				std::cout << "Bytes received: " << str << '\n';
+				std::cout << "Bytes received: ";
+				for(int i = 0; i < _bytes_transferred; ++i)
+				{
+					std::cout << std::hex << (unsigned int)str[i] << ' ';
+				}
+				std::cout << "\n\n";
 
 				// Clear the read buffer
 				this->readBuffer.consume(_bytes_transferred);
 				this->read();
+
+				// Echo the message back to the client
+				this->writeBufferQueue.push(str);
+				this->write();
 			}
 			else
 			{
@@ -138,10 +149,19 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 				// Pop the written packet from the write buffer
 				std::string str(this->writeBufferQueue.front());
 				this->writeBufferQueue.pop();
-
+				
 				// Keep this for testing/examples
-				std::cout << "Num bytes written: " << _bytes_transferred << '\n';
-				std::cout << "Bytes written: " << str << '\n';
+				std::cout << "Bytes written: ";
+				for(int i = 0; i < _bytes_transferred; ++i)
+				{
+					std::cout << std::hex << (unsigned int)str[i] << ' ';
+				}
+				std::cout << "\n\n";
+
+				if(this->writeBufferQueue.size() > 0)
+				{
+					this->write();
+				}
 			}
 			else
 			{

@@ -15,6 +15,9 @@ using boost::asio::ip::udp;
 // Typedefs
 typedef std::vector<unsigned char> ByteBuffer;
 
+// Consts
+const int RECV_BUFFER_SIZE = 128;
+
 class UDPClient : public std::enable_shared_from_this<UDPClient>
 {
     public:
@@ -33,6 +36,7 @@ class UDPClient : public std::enable_shared_from_this<UDPClient>
 			this->socket.open(udp::v4());
 			this->socket.bind(this->localEndpoint);
 			this->mSocketActive = true;
+			this->receiveBuffer.assign(0);
 		}
 
 		// Deconstructor
@@ -70,7 +74,7 @@ class UDPClient : public std::enable_shared_from_this<UDPClient>
 
 		void receive()
 		{
-			// Read into readBuffer until we reach a null terminator '\0'
+			// Async receive
 			this->socket.async_receive_from(boost::asio::buffer(this->receiveBuffer),
 											this->remoteEndpoint,
 											boost::bind(&UDPClient::handleReceive,
@@ -81,25 +85,44 @@ class UDPClient : public std::enable_shared_from_this<UDPClient>
 
 		void send()
 		{
-			// Async write
-			this->sendBufferQueue.push(std::string("Hello"));
-			std::cout << "Sending: " << this->sendBufferQueue.front() << '\n';
-
-			this->socket.async_send_to(boost::asio::buffer(this->sendBufferQueue.front(), this->sendBufferQueue.front().size()),
-									   this->remoteEndpoint,
-									   boost::bind(&UDPClient::handleSend,
-												   shared_from_this(),
-												   boost::asio::placeholders::error,
-												   boost::asio::placeholders::bytes_transferred));
+			// Async send
+			if(this->sendBufferQueue.size() > 0)
+			{
+				this->socket.async_send_to(boost::asio::buffer(this->sendBufferQueue.front(), this->sendBufferQueue.front().size()),
+										this->remoteEndpoint,
+										boost::bind(&UDPClient::handleSend,
+													shared_from_this(),
+													boost::asio::placeholders::error,
+													boost::asio::placeholders::bytes_transferred));
+			}
 		}
 
+		void pushOntoSendQueue(std::string _str)
+		{
+			std::lock_guard<std::mutex> lock(this->m);
+			this->sendBufferQueue.push(_str + '\0');
+		}
+
+		/*****************
+		 * Getters & Setters
+		 ****************/
+		udp::socket& getSocket() { return this->socket; }
+		bool isSocketActive() { return this->mSocketActive; }
+
+    private:
 		void handleReceive(const boost::system::error_code& _error, size_t _bytes_transferred)
 		{
 			if (!_error)
 			{
-				std::string str(this->receiveBuffer.begin(), this->receiveBuffer.end());
-				std::cout << "Num bytes read: " << _bytes_transferred << '\n';
-				std::cout << "Read: " << str << '\n';
+				std::string str(this->receiveBuffer.begin(), this->receiveBuffer.begin() + _bytes_transferred);
+
+				std::cout << "Received: ";
+				for(int i = 0; i < str.size(); ++i)
+				{
+					std::cout << std::hex << (unsigned int)str[i] << ' ';
+				}
+				std::cout << "\n\n";
+
 				this->receive();
     		}
 			else
@@ -112,9 +135,21 @@ class UDPClient : public std::enable_shared_from_this<UDPClient>
 		{
 			if (!_error)
 			{
-				std::cout << "Num bytes written: " << _bytes_transferred << '\n';
-				std::cout << "Writing: " << this->sendBufferQueue.front() << '\n';
+				std::string str = this->sendBufferQueue.front();
 				this->sendBufferQueue.pop();
+
+				std::cout << "Sending: ";
+				for(int i = 0; i < str.size(); ++i)
+				{
+					std::cout << std::hex << (unsigned int)str[i] << ' ';
+				}
+				std::cout << "\n\n";
+
+				
+				if(this->sendBufferQueue.size() > 0)
+				{
+					this->send();
+				}
     		}
 			else
 			{
@@ -122,13 +157,13 @@ class UDPClient : public std::enable_shared_from_this<UDPClient>
 			}
 		}
 
-    private:
+		std::mutex m;
 		bool mSocketActive = false;
         udp::socket socket;
         udp::resolver resolver;
 		udp::endpoint localEndpoint;
 		udp::endpoint remoteEndpoint;
-		boost::array<char, 128> receiveBuffer;
+		boost::array<char, RECV_BUFFER_SIZE> receiveBuffer;
 		std::queue<std::string> sendBufferQueue;
 };
 
@@ -160,18 +195,31 @@ int main(int argc, char* argv[])
             std::cout << "Quit: (Q or q)" << '\n';
             std::cout << "Enter command: " << '\n' << "> ";
             std::cin >> cmd;
+			std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
             switch(cmd)
             {
-                case 'Q':
-                    [[fallthrough]];
+                case 'Q': [[fallthrough]];
                 case 'q':
                     q = true;
 					stopEverything(client);
                     break;
-                default:
+				case 'S': [[fallthrough]];
+				case 's':
+					client->send();
+					break;
+				case 'W': [[fallthrough]];
+				case 'w':
+				// Must brace this block for the initialization of str
+				{
+					std::string str;
+					std::cout << "Enter message to send: ";
+					std::getline(std::cin, str);
+					client->pushOntoSendQueue(str);
+					break;
+				}
+				default:
                     break;
             }
-			std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
     };
 	// Thread our input loop
