@@ -59,7 +59,6 @@ class UDPServer : public std::enable_shared_from_this<UDPServer>
 		void receive()
 		{
 			// Async receive
-			std::cout << "Receive\n";
 			this->socket.async_receive_from(boost::asio::buffer(this->receiveBuffer),
 											this->remoteEndpoint,
 											boost::bind(&UDPServer::handleReceive,
@@ -90,7 +89,6 @@ class UDPServer : public std::enable_shared_from_this<UDPServer>
 	private:
 		void handleReceive(const boost::system::error_code& _error, size_t _bytes_transferred)
 		{
-			std::cout << "HandleReceive\n";
 			if (!_error)
 			{
 				std::string str(this->receiveBuffer.begin(), this->receiveBuffer.end());

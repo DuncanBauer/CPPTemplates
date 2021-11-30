@@ -39,7 +39,6 @@ class UDPClient : public std::enable_shared_from_this<UDPClient>
 		~UDPClient()
 		{
 			this->shutdown();
-			
 		}
 
 		/*****************
@@ -114,6 +113,8 @@ class UDPClient : public std::enable_shared_from_this<UDPClient>
 			if (!_error)
 			{
 				std::cout << "Num bytes written: " << _bytes_transferred << '\n';
+				std::cout << "Writing: " << this->sendBufferQueue.front() << '\n';
+				this->sendBufferQueue.pop();
     		}
 			else
 			{
