@@ -152,7 +152,7 @@ class UDPServer : public std::enable_shared_from_this<UDPServer>
 		boost::asio::io_context& ioContext;
 		udp::socket socket;
 		udp::endpoint remoteEndpoint;
-		boost::array<char, RECV_BUFFER_SIZE> receiveBuffer;
+		boost::array<unsigned char, RECV_BUFFER_SIZE> receiveBuffer;
 		std::queue<std::string> sendBufferQueue;
 };
 

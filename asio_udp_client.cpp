@@ -163,7 +163,7 @@ class UDPClient : public std::enable_shared_from_this<UDPClient>
         udp::resolver resolver;
 		udp::endpoint localEndpoint;
 		udp::endpoint remoteEndpoint;
-		boost::array<char, RECV_BUFFER_SIZE> receiveBuffer;
+		boost::array<unsigned char, RECV_BUFFER_SIZE> receiveBuffer;
 		std::queue<std::string> sendBufferQueue;
 };
 
