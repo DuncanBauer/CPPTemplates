@@ -54,9 +54,20 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 
 		void shutdown()
 		{
-			// Shutdown read/write and the socket itself
-			this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
-			this->socket.close();
+			// Handles and ignores
+			// `The I/O operation has been aborted because of either a thread exit or an application request` exception
+			// for a quick and dirty shutdown
+			try
+			{
+				// Shutdown read/write and the socket itself
+				this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+				this->socket.close();
+				this->mSocketActive = false;
+			}
+			catch(std::exception _error)
+			{
+				std::cout << "Error: " << _error.what() << '\n';
+			}
 		}
 
 		void read()
@@ -66,9 +77,9 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 										  this->readBuffer,
 										  '\0',
 										  boost::bind(&TCPConnection::handleRead,
-										  shared_from_this(),
-										  boost::asio::placeholders::error,
-										  boost::asio::placeholders::bytes_transferred));
+													  shared_from_this(),
+													  boost::asio::placeholders::error,
+													  boost::asio::placeholders::bytes_transferred));
 		}
 
 		void write()
@@ -77,9 +88,20 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 			boost::asio::async_write(this->socket,
 									 boost::asio::buffer(this->writeBufferQueue.front()),
 									 boost::bind(&TCPConnection::handleWrite,
-									 shared_from_this(),
-									 boost::asio::placeholders::error,
-									 boost::asio::placeholders::bytes_transferred));
+												 shared_from_this(),
+												 boost::asio::placeholders::error,
+												 boost::asio::placeholders::bytes_transferred));
+		}
+
+		/*****************
+		 * Getters & Setters
+		 ****************/
+		tcp::socket& getSocket() { return this->socket; }
+
+	private:
+		TCPConnection(boost::asio::io_context& _ioContext) : socket(_ioContext) 
+		{
+			this->mSocketActive = true;
 		}
 
 		void handleRead(const boost::system::error_code& _error, size_t _bytes_transferred)
@@ -103,7 +125,8 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 			}
 			else
 			{
-				std::cout << _error.message() << '\n';
+				std::cout << "Error: " << _error.message() << '\n';
+				this->shutdown();
 			}
 		}
 
@@ -122,18 +145,12 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 			}
 			else
 			{
-				std::cout << _error.message() << '\n';
+				std::cout << "Error: " << _error.message() << '\n';
+				this->shutdown();
 			}
 		}
 
-		/*****************
-		 * Getters & Setters
-		 ****************/
-		tcp::socket& getSocket() { return this->socket; }
-
-	private:
-		TCPConnection(boost::asio::io_context& _ioContext) : socket(_ioContext) {}
-
+		bool mSocketActive = false;
 		tcp::socket socket;
 		boost::asio::streambuf readBuffer;
 		std::queue<std::string> writeBufferQueue;
@@ -159,10 +176,7 @@ class TCPServer : public std::enable_shared_from_this<TCPServer>
 		// Destructor
 		~TCPServer() 
 		{
-			for(Connection c: *(this->connections))
-			{
-				c->shutdown();
-			}
+			this->shutdown();
 		}
 		
 		/****************
@@ -177,6 +191,14 @@ class TCPServer : public std::enable_shared_from_this<TCPServer>
 										shared_from_this(),
 										newConnection,
 										boost::asio::placeholders::error));
+		}
+
+		void shutdown()
+		{
+			for(Connection c: *(this->connections))
+			{
+				c->shutdown();
+			}
 		}
 
 		void handleAccept(std::shared_ptr<TCPConnection> _newConnection, const boost::system::error_code& _error)
@@ -203,10 +225,26 @@ class TCPServer : public std::enable_shared_from_this<TCPServer>
 		Connections connections;
 };
 
+boost::asio::io_context io_context;
+
+void stopEverything(std::shared_ptr<TCPServer> _server);
+void stopEverything(std::shared_ptr<TCPServer> _server)
+{
+	if(_server.use_count() == 1)
+	{
+		_server.reset();
+	}
+	io_context.stop();
+}
 
 int main(int argc, char* argv[])
 {
-	auto inputLoop = []() {
+	// Initialize the TCPServer
+	std::shared_ptr<TCPServer> server = std::make_shared<TCPServer>(io_context, 1111);
+
+	// Create an input loop inside a lambda function
+	auto inputLoop = [&server]()
+	{
         bool q = false;
         char cmd;
       
@@ -221,6 +259,7 @@ int main(int argc, char* argv[])
                     [[fallthrough]];
                 case 'q':
                     q = true;
+					stopEverything(server);
                     break;
                 default:
                     break;
@@ -228,11 +267,13 @@ int main(int argc, char* argv[])
 			std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
     };
+	// Thread our input loop
     std::jthread t1(inputLoop);
 
-	boost::asio::io_context io_context;
-	std::shared_ptr<TCPServer> server = std::make_shared<TCPServer>(io_context, 1111);
+	// Start the server proper
 	server->startAccept();
+
+	// If the client can't connect to the server, this won't block
 	io_context.run();
 	
 	return 0;

@@ -70,9 +70,20 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 
 		void shutdown()
 		{
-			// Shutdown read/write and the socket itself
-			this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
-			this->socket.close();
+			// Handles and ignores
+			// `The I/O operation has been aborted because of either a thread exit or an application request` exception
+			// for a quick and dirty shutdown
+			try
+			{
+				// Shutdown read/write and the socket itself
+				this->socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+				this->socket.close();
+				this->mSocketActive = false;
+			}
+			catch(std::exception _error)
+			{
+				std::cout << "Error: " << _error.what() << '\n';
+			}
 		}
 
         void read()
@@ -82,9 +93,9 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 										  this->readBuffer,
 										  '\0',
 										  boost::bind(&TCPClient::handleRead,
-										  shared_from_this(),
-										  boost::asio::placeholders::error,
-										  boost::asio::placeholders::bytes_transferred));
+													  shared_from_this(),
+													  boost::asio::placeholders::error,
+													  boost::asio::placeholders::bytes_transferred));
 		}
 
 		void write()
@@ -93,9 +104,9 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 			boost::asio::async_write(this->socket,
 									 boost::asio::buffer(this->writeBufferQueue.front()),
 								     boost::bind(&TCPClient::handleWrite,
-									 shared_from_this(),
-								     boost::asio::placeholders::error,
-								     boost::asio::placeholders::bytes_transferred));
+												 shared_from_this(),
+												 boost::asio::placeholders::error,
+												 boost::asio::placeholders::bytes_transferred));
 		}
 		bool isSocketActive() { return this->mSocketActive; }
 
@@ -121,7 +132,8 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 			}
 			else
 			{
-				std::cout << _error.message() << '\n';
+				std::cout << "Error: " << _error.message() << '\n';
+				this->shutdown();
 			}
         }
 
@@ -140,7 +152,8 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 			}
 			else
 			{
-				std::cout << _error.message() << '\n';
+				std::cout << "Error: " << _error.message() << '\n';
+				this->shutdown();
 			}
         }
 
@@ -151,10 +164,26 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 		std::queue<std::string> writeBufferQueue;
 };
 
+boost::asio::io_context io_context;
+
+void stopEverything(std::shared_ptr<TCPClient> _client);
+void stopEverything(std::shared_ptr<TCPClient> _client)
+{
+	if(_client.use_count() == 1)
+	{
+		_client.reset();
+	}
+	io_context.stop();
+}
+
 int main(int argc, char* argv[])
 {
+	// Initialize the TCPClient
+	std::shared_ptr<TCPClient> client = std::make_shared<TCPClient>(io_context, "127.0.0.1", 1111);
+
 	// Create an input loop inside a lambda function
-	auto inputLoop = []() {
+	auto inputLoop = [&client]()
+	{
         bool q = false;
         char cmd;
       
@@ -169,6 +198,7 @@ int main(int argc, char* argv[])
                     [[fallthrough]];
                 case 'q':
                     q = true;
+					stopEverything(client);
                     break;
                 default:
                     break;
@@ -178,10 +208,6 @@ int main(int argc, char* argv[])
     };
 	// Thread our input loop
     std::jthread t1(inputLoop);
-
-	// Initialize the ASIO context and TCPClient
-	boost::asio::io_context io_context;
-	std::shared_ptr<TCPClient> client = std::make_shared<TCPClient>(io_context, "127.0.0.1", 1111);
 	
 	// If the client fails to connect to the server, don't attempt to start communicating
 	if(client->isSocketActive())
