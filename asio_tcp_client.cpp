@@ -86,7 +86,7 @@ class TCPClient : public std::enable_shared_from_this<TCPClient>
 		void write()
 		{
 			// Async write
-			if(this->writeBufferQueue.size() > 0)
+			if(this->writeBufferQueue.size() > 0 && this->mSocketActive)
 			{
 				boost::asio::async_write(this->socket,
 										boost::asio::buffer(this->writeBufferQueue.front()),

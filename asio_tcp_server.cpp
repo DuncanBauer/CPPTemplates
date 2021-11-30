@@ -85,7 +85,7 @@ class TCPConnection : public std::enable_shared_from_this<TCPConnection>
 		void write()
 		{
 			// Async write
-			if(this->writeBufferQueue.size() > 0)
+			if(this->writeBufferQueue.size() > 0 && this->mSocketActive)
 			{
 				boost::asio::async_write(this->socket,
 										boost::asio::buffer(this->writeBufferQueue.front()),
