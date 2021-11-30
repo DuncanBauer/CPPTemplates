@@ -277,7 +277,7 @@ int main(int argc, char* argv[])
             {
                 case 'Q':
                     [[fallthrough]];
-                case 'q':
+                [[likely]] case 'q':
                     q = true;
 					stopEverything(server);
                     break;

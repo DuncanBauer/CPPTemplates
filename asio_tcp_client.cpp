@@ -211,16 +211,16 @@ int main(int argc, char* argv[])
             switch(cmd)
             {
                 case 'Q': [[fallthrough]];
-                case 'q':
+                [[unlikely]] case 'q':
                     q = true;
 					stopEverything(client);
                     break;
 				case 'S': [[fallthrough]];
-				case 's':
+				[[likely]] case 's':
 					client->write();
 					break;
 				case 'W': [[fallthrough]];
-				case 'w':
+				[[likely]] case 'w':
 				// Must brace this block for the initialization of str
 				{
 					std::string str;

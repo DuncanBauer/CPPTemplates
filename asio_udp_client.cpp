@@ -5,8 +5,8 @@
 #include <vector>
 
 // Boost
-#include <boost/asio.hpp>
 #include <boost/array.hpp>
+#include <boost/asio.hpp>
 #include <boost/bind/bind.hpp>
 
 // Namespaces
@@ -199,16 +199,16 @@ int main(int argc, char* argv[])
             switch(cmd)
             {
                 case 'Q': [[fallthrough]];
-                case 'q':
+                [[unlikely]] case 'q':
                     q = true;
 					stopEverything(client);
                     break;
 				case 'S': [[fallthrough]];
-				case 's':
+				[[likely]] case 's':
 					client->send();
 					break;
 				case 'W': [[fallthrough]];
-				case 'w':
+				[[likely]] case 'w':
 				// Must brace this block for the initialization of str
 				{
 					std::string str;

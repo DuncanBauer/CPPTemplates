@@ -5,8 +5,8 @@
 #include <vector>
 
 // Boost
-#include <boost/asio.hpp>
 #include <boost/array.hpp>
+#include <boost/asio.hpp>
 #include <boost/bind/bind.hpp>
 
 // Namespaces
@@ -188,7 +188,7 @@ int main(int argc, char* argv[])
             {
                 case 'Q':
                     [[fallthrough]];
-                case 'q':
+                [[likely]] case 'q':
                     q = true;
 					stopEverything(server);
                     break;
